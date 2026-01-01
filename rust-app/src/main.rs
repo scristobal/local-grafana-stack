@@ -23,6 +23,7 @@ use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use pyroscope::PyroscopeAgent;
+use pyroscope::pyroscope::PyroscopeAgentReady;
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 
 #[derive(Clone)]
@@ -67,23 +68,9 @@ struct CalculateResponse {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_telemetry()?;
+    let agent = init_telemetry()?;
 
     info!("Starting observability demo application");
-
-    let pyroscope_url = std::env::var("PYROSCOPE_URL")
-        .unwrap_or_else(|_| "http://localhost:4040".to_string());
-
-    let app_name = "rust-observability-demo".to_string();
-
-    let agent = PyroscopeAgent::builder(&pyroscope_url, &app_name)
-        .tags(vec![
-            ("service", "rust-observability-demo"),
-            ("environment", "development"),
-        ])
-        .backend(pprof_backend(PprofConfig::new().sample_rate(100)))
-        .build()
-        .map_err(|e| anyhow::anyhow!("Failed to initialize Pyroscope: {}", e))?;
 
     let agent_running = agent.start().map_err(|e| anyhow::anyhow!("Failed to start Pyroscope agent: {}", e))?;
     info!("Pyroscope continuous profiling started");
@@ -114,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_telemetry() -> anyhow::Result<()> {
+fn init_telemetry() -> anyhow::Result<PyroscopeAgent<PyroscopeAgentReady>> {
     let otlp_endpoint = std::env::var("OTLP_ENDPOINT")
         .unwrap_or_else(|_| "http://localhost:4317".to_string());
 
@@ -184,7 +171,21 @@ fn init_telemetry() -> anyhow::Result<()> {
         .with(otel_log_layer)
         .init();
 
-    Ok(())
+    let pyroscope_url = std::env::var("PYROSCOPE_URL")
+        .unwrap_or_else(|_| "http://localhost:4040".to_string());
+
+    let app_name = "rust-observability-demo".to_string();
+
+    let agent = PyroscopeAgent::builder(&pyroscope_url, &app_name)
+        .tags(vec![
+            ("service", "rust-observability-demo"),
+            ("environment", "development"),
+        ])
+        .backend(pprof_backend(PprofConfig::new().sample_rate(100)))
+        .build()
+        .map_err(|e| anyhow::anyhow!("Failed to initialize Pyroscope: {}", e))?;
+
+    Ok(agent)
 }
 
 async fn root_handler() -> Html<&'static str> {
