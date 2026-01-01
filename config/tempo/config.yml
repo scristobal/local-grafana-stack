@@ -1,0 +1,65 @@
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+compactor:
+  compaction:
+    block_retention: 1h
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/blocks
+    wal:
+      path: /var/tempo/wal
+
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+      cluster: docker-compose
+  storage:
+    path: /var/tempo/generator
+    remote_write:
+      - url: http://mimir:9009/api/v1/push
+        headers:
+          X-Scope-OrgID: demo
+  processor:
+    # Enable local-blocks processor for TraceQL metrics
+    local_blocks:
+      flush_check_period: 10s
+      max_block_duration: 5m
+      max_block_bytes: 10485760
+      complete_block_timeout: 10m
+    service_graphs:
+      max_items: 10000
+      wait: 10s
+    span_metrics:
+      dimensions:
+        - http.method
+        - http.status_code
+
+query_frontend:
+  search:
+    max_duration: 0s
+
+querier:
+  max_concurrent_queries: 20
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [local-blocks, service-graphs, span-metrics]
+      collection_interval: 15s

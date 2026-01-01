@@ -1,0 +1,28 @@
+target: all
+
+server:
+  http_listen_port: 9009
+
+multitenancy_enabled: false
+
+ingester:
+  ring:
+    replication_factor: 1
+
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+
+common:
+  storage:
+    backend: filesystem
+    filesystem:
+      dir: /data
+
+blocks_storage:
+  backend: filesystem
+  filesystem:
+    dir: /data/blocks
+  tsdb:
+    dir: /data/tsdb

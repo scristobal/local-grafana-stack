@@ -1,0 +1,138 @@
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ORG_NAME=Main Org.
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_USERS_DEFAULT_THEME=dark
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    networks:
+      - observability
+    depends_on:
+      - mimir
+      - loki
+      - tempo
+      - pyroscope
+    restart: on-failure
+
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    ports:
+      - "12345:12345"  # Alloy UI
+      - "4317:4317"    # OTLP gRPC receiver
+      - "4318:4318"    # OTLP HTTP receiver
+    volumes:
+      - ./config/alloy/config.alloy:/etc/alloy/config.alloy
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+    networks:
+      - observability
+    depends_on:
+      - mimir
+      - loki
+      - tempo
+      - pyroscope
+    restart: on-failure
+
+  mimir:
+    image: grafana/mimir:latest
+    container_name: mimir
+    command:
+      - -config.file=/etc/mimir/config.yml
+    ports:
+      - "9009:9009"  # HTTP
+    volumes:
+      - ./config/mimir/config.yml:/etc/mimir/config.yml
+      - mimir-data:/data
+    networks:
+      - observability
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    command:
+      - -config.file=/etc/loki/config.yml
+    ports:
+      - "3100:3100"  # HTTP
+    volumes:
+      - ./config/loki/config.yml:/etc/loki/config.yml
+      - loki-data:/loki
+    networks:
+      - observability
+
+  tempo:
+    image: grafana/tempo:latest
+    container_name: tempo
+    command:
+      - -config.file=/etc/tempo/config.yml
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4319:4317"   # OTLP gRPC
+      - "4320:4318"   # OTLP HTTP
+    volumes:
+      - ./config/tempo/config.yml:/etc/tempo/config.yml
+      - tempo-data:/var/tempo
+    networks:
+      - observability
+
+  pyroscope:
+    image: grafana/pyroscope:latest
+    container_name: pyroscope
+    ports:
+      - "4040:4040"   # Pyroscope HTTP
+    volumes:
+      - pyroscope-data:/var/lib/pyroscope
+    networks:
+      - observability
+
+  rust-app:
+    build:
+      context: ./rust-app
+      dockerfile: Dockerfile
+    container_name: rust-observability-demo
+    ports:
+      - "8080:8080"   # Application HTTP
+    environment:
+      - RUST_LOG=info,observability_demo=debug
+      - OTLP_ENDPOINT=http://alloy:4317
+      - PYROSCOPE_URL=http://pyroscope:4040
+    networks:
+      - observability
+    depends_on:
+      - alloy
+    restart: on-failure
+
+  k6:
+    image: grafana/k6:latest
+    container_name: k6-load-test
+    networks:
+      - observability
+    volumes:
+      - ./k6:/scripts
+    environment:
+      - BASE_URL=http://rust-app:8080
+    depends_on:
+      - rust-app
+    profiles:
+      - tools
+
+volumes:
+  grafana-data:
+  mimir-data:
+  loki-data:
+  tempo-data:
+  pyroscope-data:
+
+networks:
+  observability:
+    driver: bridge
